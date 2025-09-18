@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Locked Pet's Dashboard</title>
+<style>
+  :root{
+    --bg:#0f0f12;
+    --card:#1a1a1f;
+    --ink:#eaeaf0;
+    --muted:#9aa0a6;
+    --accent:#ff3366;
+    --accent2:#cc0033;
+    --ok:#22c55e;
+    --warn:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    line-height:1.45;
+  }
+  header{
+    padding:20px 16px;
+    text-align:center;
+    position:sticky;top:0;background:linear-gradient(0deg, rgba(15,15,18,0.2), var(--bg) 40%);
+    z-index:10;
+    border-bottom:1px solid #212129;
+  }
+  h1{margin:6px 0 0 0;font-size:1.4rem}
+  .wrap{
+    max-width:1100px;margin:0 auto;padding:16px;display:grid;gap:16px;
+    grid-template-columns:1fr;
+  }
+  @media(min-width:980px){
+    .wrap{grid-template-columns:1.1fr 0.9fr;}
+  }
+  .card{
+    background:var(--card);
+    border:1px solid #23232b;
+    border-radius:16px;
+    padding:16px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.25);
+  }
+  .muted{color:var(--muted);font-size:0.9rem}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .pill{padding:4px 10px;border-radius:999px;background:#121219;border:1px solid #2a2a33}
+  .progress-outer{
+    width:100%;height:20px;border-radius:12px;background:#11131a;border:1px solid #2a2a33;overflow:hidden
+  }
+  .progress-inner{
+    height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .35s;
+  }
+  .status{font-weight:600;margin-left:6px}
+  button, input, textarea, select{
+    background:#13131a;border:1px solid #2a2a33;color:var(--ink);
+    border-radius:10px;padding:10px 12px;font-size:1rem
+  }
+  button{cursor:pointer}
+  button:hover{filter:brightness(1.05)}
+  textarea{width:100%;min-height:90px;resize:vertical}
+  ul.rules{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+  ul.rules li{background:#13141b;border:1px solid #2a2a33;border-radius:10px;padding:10px 12px}
+  .tasks{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .task{display:flex;gap:8px;align-items:center;background:#12131a;border:1px solid #2a2a33;border-radius:10px;padding:10px}
+  .task input[type="checkbox"]{transform:scale(1.2)}
+  /* Calendar */
+  .cal{
+    --g:12px;
+    display:grid; gap:var(--g);
+  }
+  .cal header{position:unset;background:unset;border:none;padding:0;text-align:left}
+  .cal .bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .cal .bar h3{margin:0}
+  .cal .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .cal .dow{color:var(--muted);text-align:center;font-size:0.85rem}
+  .cal .cell{
+    height:80px;background:#12131a;border:1px solid #2a2a33;border-radius:10px;padding:6px;
+    display:flex;flex-direction:column;justify-content:space-between
+  }
+  .cal .num{font-weight:600;color:#d7d7de}
+  .cal .marks{display:flex;gap:4px;flex-wrap:wrap}
+  .chip{font-size:.75rem;border-radius:999px;padding:2px 6px;border:1px solid #2a2a33}
+  .chip.done{background:rgba(34,197,94,.12);border-color:#214d33}
+  .chip.missed{background:rgba(245,158,11,.12);border-color:#4d3a21}
+  .chip.lock{background:rgba(255,51,102,.12);border-color:#4d1d2b}
+  .chip.released{background:rgba(96, 0, 250, 0.315);border-color:#0a0041}
+  .chip.unlocked{background:rgb(57, 69, 240);border-color:#0016db}
+  .center{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .small{font-size:.9rem}
+  .right{margin-left:auto}
+  .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,monospace;font-size:.85rem;background:#0e0e12;border:1px solid #2a2a33;padding:2px 6px;border-radius:6px}
+</style>
+</head>
+<body>
+  <header>
+    <div class="row center">
+      <div class="pill">Locked Pet's Dashboard</div>
+      <div class="pill">Mode: <span id="modeLabel" class="status">Locked Pet</span></div>
+      <button id="toggleMode" title="Enter a passphrase to enable Keyholder updates">Keyholder Mode</button>
+      <button id="toggleMode" >Locked Pet Mode</button>
+    </div>
+    <h1>Locked Pet's Dashboard</h1>
+  </header>
+
+  <div class="wrap">
+    <!-- LEFT COLUMN -->
+    <section class="card">
+      <h2>Calendar</h2>
+      <div class="muted small">Tap a day to mark: <span class="chip done">Done</span> / <span class="chip missed">Missed</span> / <span class="chip lock">Locked</span> / <span class="chip released">Released</span>/ <span class="chip unlocked">Unlocked</span>.</div>
+      <div class="cal" id="calendar">
+        <div class="bar">
+          <button id="prevBtn">← Prev</button>
+          <h3 id="monthLabel">Month YYYY</h3>
+          <button id="nextBtn">Next →</button>
+        </div>
+        <div class="grid" id="dowRow"></div>
+        <div class="grid" id="dayGrid"></div>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN -->
+    <section class="card">
+      <h2>Unlock Progress</h2>
+      <div class="row">
+        <div class="progress-outer" style="flex:1">
+          <div class="progress-inner" id="progressBar"></div>
+        </div>
+        <div class="status" id="progressPct">0%</div>
+      </div>
+      <div class="row small muted" style="margin-top:8px">
+        Status: <strong id="lockStatus">Locked</strong>
+        <span class="right"></span>
+        <span class="muted">Next review: <span id="nextReview">—</span></span>
+      </div>
+      <details id="settings" style="margin-top:10px">
+        <summary>Settings (Keyholder)</summary>
+        <div class="row" style="margin-top:10px">
+          <label>Progress % <input id="progressInput" type="number" min="0" max="100" step="1" value="0" style="width:92px"/></label>
+          <label>Next review <input id="reviewInput" type="date"/></label>
+          <label>Status 
+            <select id="statusInput">
+              <option>Locked</option>
+              <option>Conditionally Locked</option>
+              <option>Unlocked</option>
+            </select>
+          </label>
+          <button id="saveSettings">Save</button>
+        </div>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>Weekly Tasks</h2>
+      <div class="tasks" id="taskList">
+        <label class="task"><input type="checkbox" data-task="mon_dog"> Monday — Walk Penny / exercise</label>
+        <label class="task"><input type="checkbox" data-task="tue_meal"> Tuesday — Healthy meal</label>
+        <label class="task"><input type="checkbox" data-task="wed_worship"> Wednesday — Task #3</label>
+        <label class="task"><input type="checkbox" data-task="thu_meal"> Thursday — Healthy meal</label>
+        <label class="task"><input type="checkbox" data-task="fri_voice"> Friday — Task #5</label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Rules (Always in Effect)</h2>
+      <ul class="rules" id="rulesList">
+        <li>Always Obey.</li>
+        <li>Send a Good Morning message to Your Keyholder with a picture of her dick.</li>
+        <li>Show Me = Send Your Keyholder a picture of her dick and plug if on.</li>
+        <li>If naked, send a picture during lunch.</li>
+        <li>Sit when you pee.</li>
+        <li>Vibrating plug must be on when going out.</li>
+        <li>Plug must be on whenever leaving the apartment.</li>
+        <li>Nightly message of devotion: "My Keyholder, this is your locked Pet submitting my nightly message with obedience and gratitude. I am Your Locked Pet. You are My Keyholder. My submission is yours. My pleasure is your will."</li>
+        <li>No touching or unlocking without explicit permission.</li>
+      </ul>
+      <details id="editRules">
+        <summary>Edit Rules (Keyholder)</summary>
+        <textarea id="rulesEditor" placeholder="One rule per line"></textarea>
+        <div class="row" style="margin-top:8px"><button id="saveRules">Save Rules</button></div>
+      </details>
+    </section>
+
+    <section class="card" style="grid-column:1 / -1">
+      <h2>📝 Notes</h2>
+      <textarea id="notes" placeholder="Reflections, conditions, rewards, or reminders..."></textarea>
+    </section>
+  </div>
+
+<script>
+(function(){
+  const STORE_KEY = "kh_dash_v1";
+  const PASS_ENV  = "hismaster"; 
+  let state = {
+    progress: 0,
+    status: "Locked",
+    nextReview: "",
+    tasks: {},
+    rules: [
+      "Always Obey.",
+      "Send a Good Morning message to Your Keyholder with a picture of her dick.",
+      "Show Me = Send Your Keyholder a picture of her dick and plug if on.",
+      "If naked, send a picture during lunch.",
+      "Sit when you pee.",
+      "Vibrating plug must be on when going out.",
+      "Plug must be on whenever leaving the apartment.",
+      "Nightly message of devotion: My Keyholder, this is your locked Pet submitting my nightly message with obedience and gratitude. I am Your Locked Pet. You are My Keyholder. My submission is yours. My pleasure is your will.",
+      "No touching or unlocking without explicit permission.",
+    ],
+    notes: "",
+    calendar: {}, // {'YYYY-MM': { '1': 'done|missed|lock', ... }}
+    ym: null
+  };
+
+  // Load/save helpers
+  const load = () => {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if(raw){ state = {...state, ...JSON.parse(raw)}; }
+    } catch(e) { console.warn(e); }
+  };
+  const save = () => {
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    render();
+  };
+
+  // Mode (Locked Pet vs Keyholder)
+  let keyholder = false;
+  const toggleModeBtn = document.getElementById("toggleMode");
+  const modeLabel = document.getElementById("modeLabel");
+  toggleModeBtn.addEventListener("click", () => {
+    if(!keyholder){
+      const pass = prompt("Enter Keyholder passphrase:");
+      if(pass === PASS_ENV){ keyholder = true; }
+      else { alert("Wrong passphrase"); }
+    } else {
+      keyholder = false;
+    }
+    modeLabel.textContent = keyholder ? "Keyholder" : "Locked Pet";
+    document.getElementById("settings").open = keyholder;
+    document.getElementById("editRules").open = keyholder;
+  });
+
+  // Elements
+  const progressBar = document.getElementById("progressBar");
+  const progressPct = document.getElementById("progressPct");
+  const lockStatus  = document.getElementById("lockStatus");
+  const nextReviewEl= document.getElementById("nextReview");
+  const progressInput = document.getElementById("progressInput");
+  const reviewInput   = document.getElementById("reviewInput");
+  const statusInput   = document.getElementById("statusInput");
+  const saveSettings  = document.getElementById("saveSettings");
+  const notesEl = document.getElementById("notes");
+
+  // Tasks
+  const taskList = document.getElementById("taskList");
+  taskList.addEventListener("change",(e)=>{
+    if(e.target.matches('input[type="checkbox"]')){
+      state.tasks[e.target.dataset.task] = e.target.checked;
+      save();
+    }
+  });
+
+  // Rules
+  const rulesList = document.getElementById("rulesList");
+  const rulesEditor = document.getElementById("rulesEditor");
+  const saveRulesBtn = document.getElementById("saveRules");
+  saveRulesBtn.addEventListener("click", ()=>{
+    if(!keyholder){ return alert("Keyholder mode required"); }
+    const lines = rulesEditor.value.split(/\n/).map(s=>s.trim()).filter(Boolean);
+    state.rules = lines.length ? lines : state.rules;
+    save();
+  });
+
+  // Notes
+  notesEl.addEventListener("input", ()=>{
+    state.notes = notesEl.value;
+    save();
+  });
+
+  // Settings save
+  saveSettings.addEventListener("click", ()=>{
+    if(!keyholder){ return alert("Keyholder mode required"); }
+    const p = Math.max(0, Math.min(100, parseInt(progressInput.value || "0", 10)));
+    state.progress = p;
+    state.nextReview = reviewInput.value || "";
+    state.status = statusInput.value;
+    save();
+  });
+
+  // Calendar
+  const monthLabel = document.getElementById("monthLabel");
+  const dowRow = document.getElementById("dowRow");
+  const dayGrid = document.getElementById("dayGrid");
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+  DOW.forEach(d=>{
+    const el = document.createElement("div");
+    el.className="dow";
+    el.textContent=d;
+    dowRow.appendChild(el);
+  });
+
+  let view = new Date();
+  view.setDate(1);
+
+  function ymKey(d){
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+  }
+
+  function buildMonth(d){
+    dayGrid.innerHTML = "";
+    const y = d.getFullYear(), m = d.getMonth();
+    monthLabel.textContent = d.toLocaleString(undefined,{month:"long", year:"numeric"});
+    const firstDow = new Date(y,m,1).getDay();
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+
+    // leading blanks
+    for(let i=0;i<firstDow;i++){
+      const cell = document.createElement("div");
+      cell.className="cell";
+      dayGrid.appendChild(cell);
+    }
+
+    const key = ymKey(d);
+    if(!state.calendar[key]) state.calendar[key] = {};
+
+    for(let day=1; day<=daysInMonth; day++){
+      const status = state.calendar[key][day] || "";
+      const cell = document.createElement("div");
+      cell.className="cell";
+      cell.dataset.day = day;
+      const num = document.createElement("div");
+      num.className="num";
+      num.textContent=day;
+      const marks = document.createElement("div");
+      marks.className="marks";
+      if(status){
+        const chip = document.createElement("span");
+        chip.className = "chip "+status;
+        chip.textContent = status === "done" ? "Done" : status === "missed" ? "Missed" : status === "locked"? "Locked" : status === "released" ? "Released" : "Unlocked";
+        marks.appendChild(chip);
+      }
+      cell.appendChild(num);
+      cell.appendChild(marks);
+      cell.addEventListener("click", ()=>{
+        // cycle through statuses
+        const order = ["","done","missed","lock","released","unlocked"];
+        const current = state.calendar[key][day] || "";
+        const next = order[(order.indexOf(current)+1)%order.length];
+        state.calendar[key][day] = next;
+        save();
+      });
+      dayGrid.appendChild(cell);
+    }
+  }
+
+  prevBtn.addEventListener("click", ()=>{ view.setMonth(view.getMonth()-1); buildMonth(view); });
+  nextBtn.addEventListener("click", ()=>{ view.setMonth(view.getMonth()+1); buildMonth(view); });
+
+  // Render
+  function render(){
+    progressBar.style.width = (state.progress||0) + "%";
+    progressPct.textContent = (state.progress||0) + "%";
+    lockStatus.textContent = state.status || "Locked";
+    nextReviewEl.textContent = state.nextReview ? new Date(state.nextReview).toLocaleDateString() : "—";
+    progressInput.value = state.progress||0;
+    reviewInput.value = state.nextReview||"";
+    statusInput.value = state.status||"Locked";
+
+    // tasks
+    taskList.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+      cb.checked = !!state.tasks[cb.dataset.task];
+    });
+
+    // rules
+    rulesList.innerHTML="";
+    (state.rules||[]).forEach(r=>{
+      const li = document.createElement("li"); li.textContent = r; rulesList.appendChild(li);
+    });
+    rulesEditor.value = (state.rules||[]).join("\n");
+
+    // notes
+    notesEl.value = state.notes||"";
+
+    // calendar
+    buildMonth(view);
+  }
+
+  // boot
+  load();
+  render();
+})();
+</script>
+</body>
+</html>
