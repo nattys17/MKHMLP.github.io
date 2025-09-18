@@ -165,7 +165,7 @@
          data-token-key="080692"
          data-token-sub="123091">
   <h2>Locked Timer</h2>
-  <div id="timerDisplay" class="time-since" data-prefix="Locked for ">—</div>
+  <div id="timerDisplay" class="time-since" data-prefix="Locked for " data-format="dd days hh hours mm minutes ss seconds">—</div>
   <div id="timerEditor" class="row" style="margin-top:8px; display:none">
     <label>Start
       <input id="timerInput" type="datetime-local">
@@ -469,7 +469,7 @@
       const start = parseLocalDateTime(state.timerStart||"");
       if(!start) timerDisplay.textContent = "—";
       else{
-        const tick=()=>{ const p=diffParts(start,new Date()); timerDisplay.textContent = (timerDisplay.getAttribute("data-prefix")||"") + formatDiff(p, "dd hh:mm:ss"); };
+        const tick=()=>{ const p=diffParts(start,new Date()); const fmt = timerDisplay.getAttribute('data-format') || 'dd hh:mm:ss'; timerDisplay.textContent = (timerDisplay.getAttribute("data-prefix")||"") + formatDiff(p, fmt); };
         tick(); timerInterval = setInterval(tick, 1000);
       }
     }
