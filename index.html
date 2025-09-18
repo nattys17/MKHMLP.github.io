@@ -87,6 +87,11 @@
   .chip.done{background:rgba(34,197,94,.12);border-color:#214d33}
   .chip.missed{background:rgba(245,158,11,.12);border-color:#4d3a21}
   .chip.lock{background:rgba(255,51,102,.12);border-color:#4d1d2b}
+  .activity{display:grid;gap:8px}
+  .activity .item{background:#12131a;border:1px solid #2a2a33;border-radius:10px;padding:8px 10px;display:flex;gap:8px;align-items:center}
+  .badge{font-size:.75rem;padding:2px 8px;border-radius:999px;border:1px solid #2a2a33}
+  .badge.key{background:rgba(255,51,102,.12)}
+  .badge.sub{background:rgba(34,197,94,.12)}
   .chip.released{background:rgba(96, 0, 250, 0.315);border-color:#0a0041}
   .chip.unlocked{background:rgb(57, 69, 240);border-color:#0016db}
   .center{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -98,9 +103,8 @@
 <body>
   <header>
     <div class="row center">
-      <div class="pill">Locked Pet's Dashboard</div>
       <div class="pill">Mode: <span id="modeLabel" class="status">Locked Pet</span></div>
-      <button id="toggleMode" title="Enter a passphrase to enable Keyholder updates">Keyholder Mode</button>
+      <button id="toggleMode" title="Enter Password enable Keyholder updates">Keyholder Mode</button>
       <button id="subModeBtn" >Locked Pet Mode</button>
     </div>
     <h1>Locked Pet's Dashboard</h1>
@@ -194,13 +198,26 @@
 <script>
 (function(){
   // ===== CONFIG: set these =====
-  const REMOTE_URL = "https://script.google.com/macros/s/AKfycbyUAXcAvxgk1UHddSlXzvJgWxlVv-J0EZUf753MJrtXeWonzu4keL3GCR5U2qtkoT15/exec"; // Apps Script web app URL
-  const KEYHOLDER_PIN = "IamtheKeyholder";               // UI gate only
-  const SUB_PIN       = "herslave";                     // UI gate only
-  const TOKEN_KEY     = "HisMaster";             // must match Apps Script
-  const TOKEN_SUB     = "HerSlave";                   // must match Apps Script
-  const AUTO_REFRESH_MS = 30000;                          // 30 seconds
+  const REMOTE_URL  = "https://script.google.com/macros/s/AKfycbwt_sRLnnmpcYLeONNq7yy-ryXpXHl2z-QrK-w_5YkGSLH_vFnO44-VkksD7f_PwZSK/exec"; // Apps Script web app URL
+  const KEYHOLDER_PIN = "IamtheKeyholder";                 // UI gate only
+  const SUB_PIN       = "";                       // UI gate only
+  const TOKEN_KEY     = "HisMaster";               // must match Apps Script
+  const TOKEN_SUB     = "HerSlave";                     // must match Apps Script
+  const AUTO_REFRESH_MS = 30000;                            // 30 seconds
   // ==============================
+
+  // Render a YYYY-MM-DD string as a *local* date, avoiding UTC shift
+  function ymdToLocalDisplay(ymd){
+    if(!ymd) return '—';
+    const parts = ymd.split('-'); if(parts.length!==3) return ymd;
+    const y = parseInt(parts[0],10), m = parseInt(parts[1],10), d = parseInt(parts[2],10);
+    if(!y||!m||!d) return ymd;
+    const local = new Date(y, m-1, d); // local midnight
+    return local.toLocaleDateString();
+  }
+
+  const TAGS_KEYHOLDER = ["done","missed","lock","released","unlocked"];
+  const TAGS_SUB       = ["done","missed"];
 
   // State & role
   let role = "viewer"; // viewer | keyholder | sub
@@ -210,24 +227,23 @@
     calendar: {}, activity: []
   };
 
-  // UI elements (matching your HTML)
+  // UI helpers
   const serverMsg = document.getElementById("serverMsg");
   function flash(type, text){
     if(!serverMsg) return alert(text);
     serverMsg.className = "banner" + (type==="error" ? " error" : type==="success" ? " success" : "");
     serverMsg.textContent = text;
     serverMsg.style.display = "block";
-    clearTimeout(flash._t); flash._t = setTimeout(()=>{ serverMsg.style.display="none"; }, 3000);
+    clearTimeout(flash._t); flash._t = setTimeout(()=>{ serverMsg.style.display="none"; }, 3500);
   }
 
-  // Mode labels & buttons
+  // Role buttons
   const modeLabel = document.getElementById("modeLabel");
-  const keyBtn    = document.getElementById("toggleMode");   // existing "Keyholder Mode" button
-  const subBtn    = document.getElementById("subModeBtn");   // renamed second button
+  const keyBtn    = document.getElementById("toggleMode");
+  const subBtn    = document.getElementById("subModeBtn");
   function setRole(r){
     role = r;
     if(modeLabel) modeLabel.textContent = r==="keyholder" ? "Keyholder" : r==="sub" ? "Locked Pet" : "Viewer";
-    // Toggle editor UIs
     const settings = document.getElementById("settings");
     const editRules = document.getElementById("editRules");
     if(settings) settings.style.display = (r==="keyholder") ? "block" : "none";
@@ -242,17 +258,15 @@
   }
   if(subBtn){
     subBtn.addEventListener("click", ()=>{
-      const pin = prompt("Enter Sub PIN:");
-      if(pin !== SUB_PIN){ return flash("error", "Wrong PIN"); }
       setRole("sub"); flash("", "Sub mode enabled");
     });
   }
 
-  // DOM references used below
-  const progressBar = document.getElementById("progressBar");
-  const progressPct = document.getElementById("progressPct");
-  const lockStatus  = document.getElementById("lockStatus");
-  const nextReview  = document.getElementById("nextReview");
+  // DOM references
+  const progressBar   = document.getElementById("progressBar");
+  const progressPct   = document.getElementById("progressPct");
+  const lockStatus    = document.getElementById("lockStatus");
+  const nextReview    = document.getElementById("nextReview");
   const progressInput = document.getElementById("progressInput");
   const reviewInput   = document.getElementById("reviewInput");
   const statusInput   = document.getElementById("statusInput");
@@ -262,6 +276,7 @@
   const saveRules     = document.getElementById("saveRules");
   const notesEl       = document.getElementById("notes");
   const taskList      = document.getElementById("taskList");
+  const activityList  = document.getElementById("activityList");
 
   // Calendar elements
   const monthLabel = document.getElementById("monthLabel");
@@ -280,7 +295,7 @@
   async function fetchShared(){
     const url = REMOTE_URL + "?v=" + Date.now();
     const res = await fetch(url, {cache:"no-store"});
-    if(!res.ok) throw new Error("HTTP "+res.status);
+    if(!res.ok) throw new Error("GET failed: HTTP "+res.status);
     return res.json();
   }
   async function postPatch(patch){
@@ -289,7 +304,12 @@
     body.set("who", role==="sub" ? "sub" : "keyholder");
     body.set("patch", JSON.stringify(patch));
     const res = await fetch(REMOTE_URL, {method:"POST", body});
-    if(!res.ok) throw new Error("Save failed");
+    let data = null;
+    try{ data = await res.json(); }catch{}
+    if(!res.ok || !data || data.ok !== true){
+      const msg = data && data.error ? data.error : ("Save failed (HTTP "+res.status+"). Check deployment access and tokens.");
+      throw new Error(msg);
+    }
   }
   async function postStateFull(stateAll){
     const body = new URLSearchParams();
@@ -297,10 +317,96 @@
     body.set("who", "keyholder");
     body.set("state", JSON.stringify(stateAll));
     const res = await fetch(REMOTE_URL, {method:"POST", body});
-    if(!res.ok) throw new Error("Save failed");
+    let data = null;
+    try{ data = await res.json(); }catch{}
+    if(!res.ok || !data || data.ok !== true){
+      const msg = data && data.error ? data.error : ("Save failed (HTTP "+res.status+"). Check deployment access and tokens.");
+      throw new Error(msg);
+    }
   }
 
-  // ------ Render ------
+  // ------ Activity ------
+  function renderActivity(items){
+    if(!activityList) return;
+    activityList.innerHTML = "";
+    if(!items || !items.length){
+      const d=document.createElement("div"); d.className="muted"; d.textContent="No activity yet."; activityList.appendChild(d); return;
+    }
+    items.slice(-25).reverse().forEach(ev=>{
+      const row = document.createElement("div"); row.className="item";
+      const badge = document.createElement("span"); badge.className="badge " + (ev.who==="sub"?"sub":"key"); badge.textContent = ev.who==="sub"?"Sub":"Keyholder";
+      const when = new Date(ev.when).toLocaleString();
+      const detail = document.createElement("div"); detail.innerHTML = `<strong>${ev.type}</strong> — ${ev.detail||''} <span class="muted">(${when})</span>`;
+      row.appendChild(badge); row.appendChild(detail);
+      activityList.appendChild(row);
+    });
+  }
+
+  // ------ Tag picker (multi-tag) ------
+  function openTagPicker(cell, ym, day, current){
+    if(role!=="keyholder" && role!=="sub"){ return flash("error","Choose a role to edit"); }
+    const allowed = role==="keyholder" ? TAGS_KEYHOLDER : TAGS_SUB;
+    const box = document.createElement("div");
+    box.style.position = "fixed";
+    const r = cell.getBoundingClientRect();
+    box.style.left = (r.left + window.scrollX) + "px";
+    box.style.top  = (r.bottom + window.scrollY + 6) + "px";
+    box.style.zIndex = 9999;
+    box.style.background = "#11131a";
+    box.style.border = "1px solid #2a2a33";
+    box.style.borderRadius = "10px";
+    box.style.padding = "10px";
+    box.style.boxShadow = "0 10px 30px rgba(0,0,0,0.45)";
+    box.innerHTML = `<div style="font-weight:600;margin-bottom:6px">Mark ${ym}-${day}</div>`;
+    const list = document.createElement("div"); list.style.display="flex"; list.style.gap="10px"; list.style.flexWrap="wrap";
+
+    const curSet = new Set(current);
+    allowed.forEach(tag=>{
+      const id = "tg_"+tag+"_"+ym+"_"+day;
+      const w = document.createElement("label");
+      w.style.display="flex"; w.style.alignItems="center"; w.style.gap="6px";
+      const cb = document.createElement("input"); cb.type="checkbox"; cb.id=id; cb.checked = curSet.has(tag);
+      const chip = document.createElement("span"); chip.className="chip "+tag; chip.textContent = tag.charAt(0).toUpperCase()+tag.slice(1);
+      w.appendChild(cb); w.appendChild(chip); list.appendChild(w);
+    });
+    box.appendChild(list);
+
+    const row = document.createElement("div"); row.style.display="flex"; row.style.gap="8px"; row.style.marginTop="10px";
+    const save = document.createElement("button"); save.textContent = "Save"; 
+    const cancel = document.createElement("button"); cancel.textContent = "Cancel";
+    row.appendChild(save); row.appendChild(cancel); box.appendChild(row);
+    document.body.appendChild(box);
+
+    function cleanup(){ box.remove(); document.removeEventListener("click", onDoc); }
+    function onDoc(e){ if(!box.contains(e.target)) cleanup(); }
+    setTimeout(()=>document.addEventListener("click", onDoc), 0);
+
+    save.addEventListener("click", async ()=>{
+      const selected = Array.from(list.querySelectorAll("input[type=checkbox]")).filter(x=>x.checked).map(x=>x.id.split("_")[1]);
+      try{
+        await postPatch({ calendarSet: { ym, day, tags: selected } });
+        if(!state.calendar) state.calendar = {};
+        if(!state.calendar[ym]) state.calendar[ym] = {};
+        state.calendar[ym][day] = selected; // store as array
+        buildMonth(); flash("success","Saved");
+      }catch(e){ flash("error", String(e)); }
+      cleanup();
+    });
+    cancel.addEventListener("click", cleanup);
+  }
+
+  // ------ Calendar rendering ------
+  function chipsFor(tags){
+    const arr = Array.isArray(tags) ? tags : (tags ? [tags] : []);
+    const frag = document.createDocumentFragment();
+    arr.forEach(tag=>{
+      const chip=document.createElement("span"); chip.className="chip "+tag;
+      chip.textContent = tag==="done"?"Done":tag==="missed"?"Missed":tag==="lock"?"Locked":tag==="released"?"Released":tag==="unlocked"?"Unlocked":tag;
+      frag.appendChild(chip);
+    });
+    return frag;
+  }
+
   function buildMonth(){
     if(!dayGrid) return;
     dayGrid.innerHTML = "";
@@ -312,56 +418,53 @@
     const key = ymKey(view);
     const monthData = (state.calendar && state.calendar[key]) ? state.calendar[key] : {};
     for(let day=1; day<=daysInMonth; day++){
-      const status = monthData[day] || "";
+      const val = monthData[day] || [];
       const cell = document.createElement("div"); cell.className="cell"; cell.dataset.day=day;
       const num = document.createElement("div"); num.className="num"; num.textContent=day;
       const marks = document.createElement("div"); marks.className="marks";
-      if(status){
-        const chip=document.createElement("span"); chip.className="chip "+status;
-        chip.textContent = status==="done"?"Done":status==="missed"?"Missed":status==="lock"?"Locked":status==="released"?"Released":"Unlocked";
-        marks.appendChild(chip);
-      }
+      marks.appendChild(chipsFor(val));
       cell.appendChild(num); cell.appendChild(marks);
-      // click handler: keyholder can cycle all; sub can set done/missed/clear
-      cell.addEventListener("click", async ()=>{
-        const orderKey = ["","done","missed","lock","released","unlocked"];
-        const orderSub = ["","done","missed"];
-        const order = (role==="keyholder") ? orderKey : (role==="sub" ? orderSub : null);
-        if(!order) return flash("error","Choose a role to edit");
-        const cur = monthData[day] || "";
-        const idx = order.indexOf(cur);
-        const next = order[(idx+1) % order.length];
-        try{
-          await postPatch({ calendarUpdate: { ym: ymKey(view), day, status: next } });
-          // optimistic update
-          if(!state.calendar) state.calendar = {};
-          if(!state.calendar[ymKey(view)]) state.calendar[ymKey(view)] = {};
-          state.calendar[ymKey(view)][day] = next;
-          buildMonth(); flash("success","Saved");
-        }catch(e){ flash("error", String(e)); }
+      cell.addEventListener("click", ()=>{
+        const current = Array.isArray(val) ? val : (val ? [val] : []);
+        openTagPicker(cell, key, day, current);
       });
       dayGrid.appendChild(cell);
     }
   }
 
+  // ------ Render ------
+  function renderActivity(items){
+    if(!activityList) return;
+    activityList.innerHTML = "";
+    if(!items || !items.length){
+      const d=document.createElement("div"); d.className="muted"; d.textContent="No activity yet."; activityList.appendChild(d); return;
+    }
+    items.slice(-25).reverse().forEach(ev=>{
+      const row = document.createElement("div"); row.className="item";
+      const badge = document.createElement("span"); badge.className="badge " + (ev.who==="sub"?"sub":"key"); badge.textContent = ev.who==="sub"?"Sub":"Keyholder";
+      const when = new Date(ev.when).toLocaleString();
+      const detail = document.createElement("div"); detail.innerHTML = `<strong>${ev.type}</strong> — ${ev.detail||''} <span class="muted">(${when})</span>`;
+      row.appendChild(badge); row.appendChild(detail);
+      activityList.appendChild(row);
+    });
+  }
+
   function render(){
-    // Progress & status
-    if(progressBar){ progressBar.style.width = Math.max(0,Math.min(100,parseInt(state.progress||0,10))) + "%"; }
-    if(progressPct){ progressPct.textContent = Math.max(0,Math.min(100,parseInt(state.progress||0,10))) + "%"; }
-    if(lockStatus){ lockStatus.textContent = state.status || "Locked"; }
-    if(nextReview){ nextReview.textContent = state.nextReview ? new Date(state.nextReview).toLocaleDateString() : "—"; }
-    if(progressInput) progressInput.value = parseInt(state.progress||0,10) || 0;
+    const pct = Math.max(0,Math.min(100,parseInt(state.progress||0,10)));
+    if(progressBar) progressBar.style.width = pct + "%";
+    if(progressPct) progressPct.textContent = pct + "%";
+    if(lockStatus) lockStatus.textContent = state.status || "Locked";
+    if(nextReview) nextReview.textContent = state.nextReview ? ymdToLocalDisplay(state.nextReview) : "—";
+    if(progressInput) progressInput.value = pct;
     if(reviewInput) reviewInput.value = state.nextReview || "";
     if(statusInput) statusInput.value = state.status || "Locked";
 
-    // Rules
     if(rulesList){
       rulesList.innerHTML = "";
       (state.rules||[]).forEach(r => { const li=document.createElement("li"); li.textContent=r; rulesList.appendChild(li); });
     }
     if(rulesEditor) rulesEditor.value = (state.rules||[]).join("\n");
 
-    // Tasks
     if(taskList){
       taskList.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
         const id = cb.dataset.task;
@@ -369,11 +472,9 @@
       });
     }
 
-    // Notes
     if(notesEl){ notesEl.value = state.notes || ""; }
-
-    // Calendar
     buildMonth();
+    renderActivity(state.activity || []);
   }
 
   // ------ Event bindings ------
@@ -389,55 +490,49 @@
         tasks: state.tasks,
         calendar: state.calendar
       };
-      try{ await postStateFull(next); Object.assign(state, next); render(); flash("success","Settings saved"); }
+      try{ await postStateFull(next); Object.assign(state, next); flash("success","Settings saved"); }
       catch(e){ flash("error", String(e)); }
     });
   }
-
   if(saveRules){
     saveRules.addEventListener("click", async ()=>{
       if(role!=="keyholder") return flash("error","Keyholder mode required");
       const arr = (rulesEditor.value || "").split(/\n/).map(s=>s.trim()).filter(Boolean);
-      try{ await postPatch({ rules: arr }); state.rules = arr; render(); flash("success","Rules saved"); }
+      try{ await postPatch({ rules: arr }); state.rules = arr; flash("success","Rules saved"); }
       catch(e){ flash("error", String(e)); }
     });
   }
-
   if(notesEl){
     notesEl.addEventListener("change", async ()=>{
-      if(role!=="keyholder") return; // ignore viewer/sub changes to notes
+      if(role!=="keyholder") return;
       try{ await postPatch({ notes: notesEl.value || "" }); state.notes = notesEl.value || ""; flash("success","Notes saved"); }
       catch(e){ flash("error", String(e)); }
     });
   }
-
   if(taskList){
     taskList.addEventListener("change", async (e)=>{
       if(!e.target.matches('input[type="checkbox"]')) return;
       if(role!=="keyholder" && role!=="sub") return flash("error","Choose a role to save tasks");
-      const map = {};
-      taskList.querySelectorAll('input[type="checkbox"]').forEach(cb=> map[cb.dataset.task] = cb.checked );
+      const map = {}; taskList.querySelectorAll('input[type="checkbox"]').forEach(cb=> map[cb.dataset.task] = cb.checked );
       try{ await postPatch({ tasks: map }); state.tasks = Object.assign({}, state.tasks, map); flash("success","Tasks saved"); }
       catch(e){ flash("error", String(e)); }
     });
   }
-
-  // Calendar nav
   if(prevBtn) prevBtn.addEventListener("click", ()=>{ view.setMonth(view.getMonth()-1); buildMonth(); });
   if(nextBtn) nextBtn.addEventListener("click", ()=>{ view.setMonth(view.getMonth()+1); buildMonth(); });
 
-  // ------ Boot: fetch shared, then render ------
+  // ------ Boot ------
   (async function init(){
     try{
       const data = await fetchShared();
       state = Object.assign(state, data||{});
       render();
     }catch(e){
-      flash("error", "Couldn't load shared data. Set REMOTE_URL and tokens.");
-      render(); // render defaults so page still shows
+      flash("error", "GET failed. In Apps Script, deploy as Web app with access = Anyone. Then set REMOTE_URL/TOKENs.");
+      render();
     }
     setInterval(async ()=>{
-      try{ const data = await fetchShared(); state = Object.assign(state, data||{}); render(); } catch(_){ /* ignore */ }
+      try{ const data = await fetchShared(); state = Object.assign(state, data||{}); render(); } catch(_){ }
     }, AUTO_REFRESH_MS);
   })();
 })();
