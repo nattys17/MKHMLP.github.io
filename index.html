@@ -273,7 +273,7 @@
   const subBtn    = document.getElementById("subModeBtn");
   function setRole(r){
     role = r;
-    if(modeLabel) modeLabel.textContent = r==="keyholder" ? "Keyholder" : r==="sub" ? "Locked Pet" : "Viewer";
+    if(modeLabel) modeLabel.textContent = r==="keyholder" ? "Keyholder" : r==="sub" ? "Locked Pet";
     const settings = document.getElementById("settings");
     const editRules = document.getElementById("editRules");
     if(settings) settings.style.display = (r==="keyholder") ? "block" : "none";
