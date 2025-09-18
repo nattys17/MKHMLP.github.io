@@ -282,7 +282,7 @@
     if(timerEditor) timerEditor.style.display = (r==="keyholder") ? "flex" : "none";
   }
   if(keyBtn){ keyBtn.addEventListener("click", ()=>{ const pin = prompt("Enter Keyholder PIN:"); if(pin!==KEYHOLDER_PIN) return flash("error","Wrong PIN"); setRole("keyholder"); flash("","Keyholder mode enabled"); }); }
-  if(subBtn){ subBtn.addEventListener("click", ()=>{ const pin = prompt("Enter Sub PIN:"); if(pin!==SUB_PIN) return flash("error","Wrong PIN"); setRole("sub"); flash("","Sub mode enabled"); }); }
+  if(subBtn){ subBtn.addEventListener("click", ()=>{ setRole("sub"); flash("","Sub mode enabled"); }); }
 
   // DOM refs
   const progressBar   = document.getElementById("progressBar");
