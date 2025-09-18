@@ -469,7 +469,7 @@
       const start = parseLocalDateTime(state.timerStart||"");
       if(!start) timerDisplay.textContent = "—";
       else{
-        const tick=()=>{ const p=diffParts(start,new Date()); const fmt = timerDisplay.getAttribute('data-format') || 'dd hh:mm:ss'; timerDisplay.textContent = (timerDisplay.getAttribute("data-prefix")||"") + formatDiff(p, fmt); };
+        const tick=()=>{ const p=diffParts(start,new Date()); timerDisplay.textContent = (timerDisplay.getAttribute("data-prefix")||"") + formatDiff(p, 'dd hh:mm:ss'); };
         tick(); timerInterval = setInterval(tick, 1000);
       }
     }
