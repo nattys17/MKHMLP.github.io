@@ -101,10 +101,11 @@
       <div class="pill">Locked Pet's Dashboard</div>
       <div class="pill">Mode: <span id="modeLabel" class="status">Locked Pet</span></div>
       <button id="toggleMode" title="Enter a passphrase to enable Keyholder updates">Keyholder Mode</button>
-      <button id="toggleMode" >Locked Pet Mode</button>
+      <button id="subModeBtn" >Locked Pet Mode</button>
     </div>
     <h1>Locked Pet's Dashboard</h1>
   </header>
+<div id="serverMsg" class="banner" style="display:none;max-width:950px;margin:10px auto"></div>
 
   <div class="wrap">
     <!-- LEFT COLUMN -->
@@ -192,209 +193,253 @@
 
 <script>
 (function(){
-  const STORE_KEY = "kh_dash_v1";
-  const PASS_ENV  = "hismaster"; 
+  // ===== CONFIG: set these =====
+  const REMOTE_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL"; // Apps Script web app URL
+  const KEYHOLDER_PIN = "IamtheKeyholder";               // UI gate only
+  const SUB_PIN       = "herslave";                     // UI gate only
+  const TOKEN_KEY     = "HisMaster";             // must match Apps Script
+  const TOKEN_SUB     = "HerSlave";                   // must match Apps Script
+  const AUTO_REFRESH_MS = 120000;                          // 2 minutes
+  // ==============================
+
+  // State & role
+  let role = "viewer"; // viewer | keyholder | sub
   let state = {
-    progress: 0,
-    status: "Locked",
-    nextReview: "",
-    tasks: {},
-    rules: [
-      "Always Obey.",
-      "Send a Good Morning message to Your Keyholder with a picture of her dick.",
-      "Show Me = Send Your Keyholder a picture of her dick and plug if on.",
-      "If naked, send a picture during lunch.",
-      "Sit when you pee.",
-      "Vibrating plug must be on when going out.",
-      "Plug must be on whenever leaving the apartment.",
-      "Nightly message of devotion: My Keyholder, this is your locked Pet submitting my nightly message with obedience and gratitude. I am Your Locked Pet. You are My Keyholder. My submission is yours. My pleasure is your will.",
-      "No touching or unlocking without explicit permission.",
-    ],
-    notes: "",
-    calendar: {}, // {'YYYY-MM': { '1': 'done|missed|lock', ... }}
-    ym: null
+    progress: 0, status: "Locked", nextReview: "",
+    tasks: {}, rules: [], notes: "",
+    calendar: {}, activity: []
   };
 
-  // Load/save helpers
-  const load = () => {
-    try {
-      const raw = localStorage.getItem(STORE_KEY);
-      if(raw){ state = {...state, ...JSON.parse(raw)}; }
-    } catch(e) { console.warn(e); }
-  };
-  const save = () => {
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
-    render();
-  };
+  // UI elements (matching your HTML)
+  const serverMsg = document.getElementById("serverMsg");
+  function flash(type, text){
+    if(!serverMsg) return alert(text);
+    serverMsg.className = "banner" + (type==="error" ? " error" : type==="success" ? " success" : "");
+    serverMsg.textContent = text;
+    serverMsg.style.display = "block";
+    clearTimeout(flash._t); flash._t = setTimeout(()=>{ serverMsg.style.display="none"; }, 3000);
+  }
 
-  // Mode (Locked Pet vs Keyholder)
-  let keyholder = false;
-  const toggleModeBtn = document.getElementById("toggleMode");
+  // Mode labels & buttons
   const modeLabel = document.getElementById("modeLabel");
-  toggleModeBtn.addEventListener("click", () => {
-    if(!keyholder){
-      const pass = prompt("Enter Keyholder passphrase:");
-      if(pass === PASS_ENV){ keyholder = true; }
-      else { alert("Wrong passphrase"); }
-    } else {
-      keyholder = false;
-    }
-    modeLabel.textContent = keyholder ? "Keyholder" : "Locked Pet";
-    document.getElementById("settings").open = keyholder;
-    document.getElementById("editRules").open = keyholder;
-  });
+  const keyBtn    = document.getElementById("toggleMode");   // existing "Keyholder Mode" button
+  const subBtn    = document.getElementById("subModeBtn");   // renamed second button
+  function setRole(r){
+    role = r;
+    if(modeLabel) modeLabel.textContent = r==="keyholder" ? "Keyholder" : r==="sub" ? "Locked Pet" : "Viewer";
+    // Toggle editor UIs
+    const settings = document.getElementById("settings");
+    const editRules = document.getElementById("editRules");
+    if(settings) settings.style.display = (r==="keyholder") ? "block" : "none";
+    if(editRules) editRules.style.display = (r==="keyholder") ? "block" : "none";
+  }
+  if(keyBtn){
+    keyBtn.addEventListener("click", ()=>{
+      const pin = prompt("Enter Keyholder PIN:");
+      if(pin !== KEYHOLDER_PIN){ return flash("error", "Wrong PIN"); }
+      setRole("keyholder"); flash("", "Keyholder mode enabled");
+    });
+  }
+  if(subBtn){
+    subBtn.addEventListener("click", ()=>{
+      const pin = prompt("Enter Sub PIN:");
+      if(pin !== SUB_PIN){ return flash("error", "Wrong PIN"); }
+      setRole("sub"); flash("", "Sub mode enabled");
+    });
+  }
 
-  // Elements
+  // DOM references used below
   const progressBar = document.getElementById("progressBar");
   const progressPct = document.getElementById("progressPct");
   const lockStatus  = document.getElementById("lockStatus");
-  const nextReviewEl= document.getElementById("nextReview");
+  const nextReview  = document.getElementById("nextReview");
   const progressInput = document.getElementById("progressInput");
   const reviewInput   = document.getElementById("reviewInput");
   const statusInput   = document.getElementById("statusInput");
   const saveSettings  = document.getElementById("saveSettings");
-  const notesEl = document.getElementById("notes");
+  const rulesList     = document.getElementById("rulesList");
+  const rulesEditor   = document.getElementById("rulesEditor");
+  const saveRules     = document.getElementById("saveRules");
+  const notesEl       = document.getElementById("notes");
+  const taskList      = document.getElementById("taskList");
 
-  // Tasks
-  const taskList = document.getElementById("taskList");
-  taskList.addEventListener("change",(e)=>{
-    if(e.target.matches('input[type="checkbox"]')){
-      state.tasks[e.target.dataset.task] = e.target.checked;
-      save();
-    }
-  });
-
-  // Rules
-  const rulesList = document.getElementById("rulesList");
-  const rulesEditor = document.getElementById("rulesEditor");
-  const saveRulesBtn = document.getElementById("saveRules");
-  saveRulesBtn.addEventListener("click", ()=>{
-    if(!keyholder){ return alert("Keyholder mode required"); }
-    const lines = rulesEditor.value.split(/\n/).map(s=>s.trim()).filter(Boolean);
-    state.rules = lines.length ? lines : state.rules;
-    save();
-  });
-
-  // Notes
-  notesEl.addEventListener("input", ()=>{
-    state.notes = notesEl.value;
-    save();
-  });
-
-  // Settings save
-  saveSettings.addEventListener("click", ()=>{
-    if(!keyholder){ return alert("Keyholder mode required"); }
-    const p = Math.max(0, Math.min(100, parseInt(progressInput.value || "0", 10)));
-    state.progress = p;
-    state.nextReview = reviewInput.value || "";
-    state.status = statusInput.value;
-    save();
-  });
-
-  // Calendar
+  // Calendar elements
   const monthLabel = document.getElementById("monthLabel");
-  const dowRow = document.getElementById("dowRow");
-  const dayGrid = document.getElementById("dayGrid");
-  const prevBtn = document.getElementById("prevBtn");
-  const nextBtn = document.getElementById("nextBtn");
+  const dowRow     = document.getElementById("dowRow");
+  const dayGrid    = document.getElementById("dayGrid");
+  const prevBtn    = document.getElementById("prevBtn");
+  const nextBtn    = document.getElementById("nextBtn");
   const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  if(dowRow && !dowRow.childElementCount){
+    DOW.forEach(d=>{ const el=document.createElement("div"); el.className="dow"; el.textContent=d; dowRow.appendChild(el); });
+  }
+  let view = new Date(); view.setDate(1);
+  function ymKey(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
 
-  DOW.forEach(d=>{
-    const el = document.createElement("div");
-    el.className="dow";
-    el.textContent=d;
-    dowRow.appendChild(el);
-  });
-
-  let view = new Date();
-  view.setDate(1);
-
-  function ymKey(d){
-    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+  // ------ Remote I/O ------
+  async function fetchShared(){
+    const url = REMOTE_URL + "?v=" + Date.now();
+    const res = await fetch(url, {cache:"no-store"});
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    return res.json();
+  }
+  async function postPatch(patch){
+    const body = new URLSearchParams();
+    body.set("token", role==="sub" ? TOKEN_SUB : TOKEN_KEY);
+    body.set("who", role==="sub" ? "sub" : "keyholder");
+    body.set("patch", JSON.stringify(patch));
+    const res = await fetch(REMOTE_URL, {method:"POST", body});
+    if(!res.ok) throw new Error("Save failed");
+  }
+  async function postStateFull(stateAll){
+    const body = new URLSearchParams();
+    body.set("token", TOKEN_KEY);
+    body.set("who", "keyholder");
+    body.set("state", JSON.stringify(stateAll));
+    const res = await fetch(REMOTE_URL, {method:"POST", body});
+    if(!res.ok) throw new Error("Save failed");
   }
 
-  function buildMonth(d){
+  // ------ Render ------
+  function buildMonth(){
+    if(!dayGrid) return;
     dayGrid.innerHTML = "";
-    const y = d.getFullYear(), m = d.getMonth();
-    monthLabel.textContent = d.toLocaleString(undefined,{month:"long", year:"numeric"});
-    const firstDow = new Date(y,m,1).getDay();
-    const daysInMonth = new Date(y, m+1, 0).getDate();
-
-    // leading blanks
-    for(let i=0;i<firstDow;i++){
-      const cell = document.createElement("div");
-      cell.className="cell";
-      dayGrid.appendChild(cell);
-    }
-
-    const key = ymKey(d);
-    if(!state.calendar[key]) state.calendar[key] = {};
-
+    const y=view.getFullYear(), m=view.getMonth();
+    if(monthLabel) monthLabel.textContent = view.toLocaleString(undefined,{month:"long",year:"numeric"});
+    const firstDow=new Date(y,m,1).getDay();
+    const daysInMonth=new Date(y,m+1,0).getDate();
+    for(let i=0;i<firstDow;i++){ const c=document.createElement("div"); c.className="cell"; dayGrid.appendChild(c); }
+    const key = ymKey(view);
+    const monthData = (state.calendar && state.calendar[key]) ? state.calendar[key] : {};
     for(let day=1; day<=daysInMonth; day++){
-      const status = state.calendar[key][day] || "";
-      const cell = document.createElement("div");
-      cell.className="cell";
-      cell.dataset.day = day;
-      const num = document.createElement("div");
-      num.className="num";
-      num.textContent=day;
-      const marks = document.createElement("div");
-      marks.className="marks";
+      const status = monthData[day] || "";
+      const cell = document.createElement("div"); cell.className="cell"; cell.dataset.day=day;
+      const num = document.createElement("div"); num.className="num"; num.textContent=day;
+      const marks = document.createElement("div"); marks.className="marks";
       if(status){
-        const chip = document.createElement("span");
-        chip.className = "chip "+status;
-        chip.textContent = status === "done" ? "Done" : status === "missed" ? "Missed" : status === "lock" ? "Locked" : status === "released" ? "Released" : "Unlocked";
+        const chip=document.createElement("span"); chip.className="chip "+status;
+        chip.textContent = status==="done"?"Done":status==="missed"?"Missed":status==="lock"?"Locked":status==="released"?"Released":"Unlocked";
         marks.appendChild(chip);
       }
-      cell.appendChild(num);
-      cell.appendChild(marks);
-      cell.addEventListener("click", ()=>{
-        // cycle through statuses
-        const order = ["","done","missed","lock","released","unlocked"];
-        const current = state.calendar[key][day] || "";
-        const next = order[(order.indexOf(current)+1)%order.length];
-        state.calendar[key][day] = next;
-        save();
+      cell.appendChild(num); cell.appendChild(marks);
+      // click handler: keyholder can cycle all; sub can set done/missed/clear
+      cell.addEventListener("click", async ()=>{
+        const orderKey = ["","done","missed","lock","released","unlocked"];
+        const orderSub = ["","done","missed"];
+        const order = (role==="keyholder") ? orderKey : (role==="sub" ? orderSub : null);
+        if(!order) return flash("error","Choose a role to edit");
+        const cur = monthData[day] || "";
+        const idx = order.indexOf(cur);
+        const next = order[(idx+1) % order.length];
+        try{
+          await postPatch({ calendarUpdate: { ym: ymKey(view), day, status: next } });
+          // optimistic update
+          if(!state.calendar) state.calendar = {};
+          if(!state.calendar[ymKey(view)]) state.calendar[ymKey(view)] = {};
+          state.calendar[ymKey(view)][day] = next;
+          buildMonth(); flash("success","Saved");
+        }catch(e){ flash("error", String(e)); }
       });
       dayGrid.appendChild(cell);
     }
   }
 
-  prevBtn.addEventListener("click", ()=>{ view.setMonth(view.getMonth()-1); buildMonth(view); });
-  nextBtn.addEventListener("click", ()=>{ view.setMonth(view.getMonth()+1); buildMonth(view); });
-
-  // Render
   function render(){
-    progressBar.style.width = (state.progress||0) + "%";
-    progressPct.textContent = (state.progress||0) + "%";
-    lockStatus.textContent = state.status || "Locked";
-    nextReviewEl.textContent = state.nextReview ? new Date(state.nextReview).toLocaleDateString() : "—";
-    progressInput.value = state.progress||0;
-    reviewInput.value = state.nextReview||"";
-    statusInput.value = state.status||"Locked";
+    // Progress & status
+    if(progressBar){ progressBar.style.width = Math.max(0,Math.min(100,parseInt(state.progress||0,10))) + "%"; }
+    if(progressPct){ progressPct.textContent = Math.max(0,Math.min(100,parseInt(state.progress||0,10))) + "%"; }
+    if(lockStatus){ lockStatus.textContent = state.status || "Locked"; }
+    if(nextReview){ nextReview.textContent = state.nextReview ? new Date(state.nextReview).toLocaleDateString() : "—"; }
+    if(progressInput) progressInput.value = parseInt(state.progress||0,10) || 0;
+    if(reviewInput) reviewInput.value = state.nextReview || "";
+    if(statusInput) statusInput.value = state.status || "Locked";
 
-    // tasks
-    taskList.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
-      cb.checked = !!state.tasks[cb.dataset.task];
-    });
+    // Rules
+    if(rulesList){
+      rulesList.innerHTML = "";
+      (state.rules||[]).forEach(r => { const li=document.createElement("li"); li.textContent=r; rulesList.appendChild(li); });
+    }
+    if(rulesEditor) rulesEditor.value = (state.rules||[]).join("\n");
 
-    // rules
-    rulesList.innerHTML="";
-    (state.rules||[]).forEach(r=>{
-      const li = document.createElement("li"); li.textContent = r; rulesList.appendChild(li);
-    });
-    rulesEditor.value = (state.rules||[]).join("\n");
+    // Tasks
+    if(taskList){
+      taskList.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+        const id = cb.dataset.task;
+        cb.checked = !!(state.tasks && state.tasks[id]);
+      });
+    }
 
-    // notes
-    notesEl.value = state.notes||"";
+    // Notes
+    if(notesEl){ notesEl.value = state.notes || ""; }
 
-    // calendar
-    buildMonth(view);
+    // Calendar
+    buildMonth();
   }
 
-  // boot
-  load();
-  render();
+  // ------ Event bindings ------
+  if(saveSettings){
+    saveSettings.addEventListener("click", async ()=>{
+      if(role!=="keyholder") return flash("error","Keyholder mode required");
+      const next = {
+        progress: Math.max(0, Math.min(100, parseInt(progressInput.value || "0", 10))),
+        status: statusInput.value || "Locked",
+        nextReview: reviewInput.value || "",
+        rules: state.rules,
+        notes: state.notes,
+        tasks: state.tasks,
+        calendar: state.calendar
+      };
+      try{ await postStateFull(next); Object.assign(state, next); render(); flash("success","Settings saved"); }
+      catch(e){ flash("error", String(e)); }
+    });
+  }
+
+  if(saveRules){
+    saveRules.addEventListener("click", async ()=>{
+      if(role!=="keyholder") return flash("error","Keyholder mode required");
+      const arr = (rulesEditor.value || "").split(/\n/).map(s=>s.trim()).filter(Boolean);
+      try{ await postPatch({ rules: arr }); state.rules = arr; render(); flash("success","Rules saved"); }
+      catch(e){ flash("error", String(e)); }
+    });
+  }
+
+  if(notesEl){
+    notesEl.addEventListener("change", async ()=>{
+      if(role!=="keyholder") return; // ignore viewer/sub changes to notes
+      try{ await postPatch({ notes: notesEl.value || "" }); state.notes = notesEl.value || ""; flash("success","Notes saved"); }
+      catch(e){ flash("error", String(e)); }
+    });
+  }
+
+  if(taskList){
+    taskList.addEventListener("change", async (e)=>{
+      if(!e.target.matches('input[type="checkbox"]')) return;
+      if(role!=="keyholder" && role!=="sub") return flash("error","Choose a role to save tasks");
+      const map = {};
+      taskList.querySelectorAll('input[type="checkbox"]').forEach(cb=> map[cb.dataset.task] = cb.checked );
+      try{ await postPatch({ tasks: map }); state.tasks = Object.assign({}, state.tasks, map); flash("success","Tasks saved"); }
+      catch(e){ flash("error", String(e)); }
+    });
+  }
+
+  // Calendar nav
+  if(prevBtn) prevBtn.addEventListener("click", ()=>{ view.setMonth(view.getMonth()-1); buildMonth(); });
+  if(nextBtn) nextBtn.addEventListener("click", ()=>{ view.setMonth(view.getMonth()+1); buildMonth(); });
+
+  // ------ Boot: fetch shared, then render ------
+  (async function init(){
+    try{
+      const data = await fetchShared();
+      state = Object.assign(state, data||{});
+      render();
+    }catch(e){
+      flash("error", "Couldn't load shared data. Set REMOTE_URL and tokens.");
+      render(); // render defaults so page still shows
+    }
+    setInterval(async ()=>{
+      try{ const data = await fetchShared(); state = Object.assign(state, data||{}); render(); } catch(_){ /* ignore */ }
+    }, AUTO_REFRESH_MS);
+  })();
 })();
 </script>
 </body>
