@@ -343,7 +343,7 @@
       if(status){
         const chip = document.createElement("span");
         chip.className = "chip "+status;
-        chip.textContent = status === "done" ? "Done" : status === "missed" ? "Missed" : status === "locked"? "Locked" : status === "released" ? "Released" : "Unlocked";
+        chip.textContent = status === "done" ? "Done" : status === "missed" ? "Missed" : status === "locked"? "Locked" : status === "released" ? "Released" : status === "unlocked" ?"Unlocked";
         marks.appendChild(chip);
       }
       cell.appendChild(num);
