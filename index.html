@@ -159,6 +159,22 @@
       </details>
     </section>
 
+    <!-- TIMER CARD -->
+<section class="card" id="timerRoot" 
+         data-remote="PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL" 
+         data-token-key="SET_KEYHOLDER_TOKEN"
+         data-token-sub="SET_SUB_TOKEN">
+  <h2>Timer</h2>
+  <div id="timerDisplay" class="time-since" data-prefix="Locked for ">—</div>
+  <div id="timerEditor" class="row" style="margin-top:8px; display:none">
+    <label>Start
+      <input id="timerInput" type="datetime-local">
+    </label>
+    <button id="timerSave">Save</button>
+    <button id="timerClear">Clear</button>
+  </div>
+</section>
+
     <section class="card">
       <h2>Weekly Tasks</h2>
       <div class="tasks" id="taskList">
@@ -526,7 +542,135 @@
     setInterval(async ()=>{ try{ const data = await fetchShared(); state = Object.assign(state, data||{}); render(); } catch(_){ } }, AUTO_REFRESH_MS);
   })();
 })();
+
+(function(){
+  // ---- Timer module (standalone) ----
+  // Looks for these elements if present:
+  //   #timerDisplay  -- shows "Locked for dd hh:mm:ss"
+  //   #timerEditor   -- editor row (visible for Keyholder only)
+  //   #timerInput    -- <input type="datetime-local">
+  //   #timerSave     -- button to save
+  //   #timerClear    -- button to clear
+  //
+  // Reads/writes `timerStart` from your Apps Script backend.
+  // Tries to use global REMOTE_URL and tokens, else falls back to data-* on #timerRoot.
+
+  function parseLocalDateTime(s){
+    if(!s) return null; s = String(s).trim();
+    if(/[T ]\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:?\d{2})$/.test(s)) return new Date(s);
+    s = s.replace(' ', 'T'); const [datePart,timePart] = s.split('T');
+    const dparts = (datePart||'').split(/[-/]/).map(Number);
+    const y = dparts[0]||0, m=(dparts[1]||1)-1, d=dparts[2]||1;
+    let hh=0,mm=0,ss=0; if(timePart){ const t=timePart.split(':').map(Number); hh=t[0]||0; mm=t[1]||0; ss=t[2]||0; }
+    return new Date(y,m,d,hh,mm,ss);
+  }
+  function diffParts(from,to){ let ms=Math.max(0,to-from); const D=86400000,H=3600000,M=60000,S=1000;
+    const days=Math.floor(ms/D); ms%=D; const hours=Math.floor(ms/H); ms%=H; const minutes=Math.floor(ms/M); ms%=M; const seconds=Math.floor(ms/S);
+    return {days,hours,minutes,seconds}; }
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function formatDiff(p,fmt){ fmt=(fmt||'dd hh:mm:ss').toLowerCase();
+    return fmt.replace(/dd/g,String(p.days)).replace(/hh/g,pad2(p.hours)).replace(/mm/g,pad2(p.minutes)).replace(/ss/g,pad2(p.seconds)); }
+  function toInputLocal(ymdHM){ if(!ymdHM) return ''; const s=String(ymdHM).replace('T',' ').replace(' ','T'); return s.slice(0,16); }
+
+  function getConfig(){
+    const root = document.getElementById('timerRoot');
+    return {
+      REMOTE_URL: (window.REMOTE_URL || (root && root.dataset.remote) || '').trim(),
+      TOKEN_KEY: (window.TOKEN_KEY || (root && root.dataset.tokenKey) || '').trim(),
+      TOKEN_SUB: (window.TOKEN_SUB || (root && root.dataset.tokenSub) || '').trim()
+    };
+  }
+
+  async function fetchShared(url){
+    const res = await fetch(url + '?v=' + Date.now(), {cache:'no-store'});
+    if(!res.ok) throw new Error('GET failed: HTTP '+res.status);
+    return res.json();
+  }
+  async function postPatch(url, token, patch){
+    const body = new URLSearchParams();
+    body.set('token', token);
+    body.set('who', 'keyholder');
+    body.set('patch', JSON.stringify(patch));
+    const res = await fetch(url, {method:'POST', body});
+    let data=null; try{ data = await res.json(); }catch{}
+    if(!res.ok || !data || data.ok!==true){
+      const msg = data && data.error ? data.error : ('Save failed (HTTP '+res.status+')');
+      throw new Error(msg);
+    }
+  }
+
+  function boot(){
+    const disp = document.getElementById('timerDisplay');
+    const editRow = document.getElementById('timerEditor');
+    const input = document.getElementById('timerInput');
+    const btnSave = document.getElementById('timerSave');
+    const btnClear = document.getElementById('timerClear');
+    if(!disp) return;
+
+    const cfg = getConfig();
+    let interval = null, timerStart = '';
+
+    function setEditorVisibility(){
+      const modeLabel = document.getElementById('modeLabel');
+      const isKeyholder = (modeLabel && modeLabel.textContent==='Keyholder');
+      if(editRow) editRow.style.display = isKeyholder ? 'flex' : 'none';
+    }
+
+    function render(){
+      clearInterval(interval);
+      const start = parseLocalDateTime(timerStart||'');
+      if(!start){ disp.textContent = '—'; return; }
+      const tick = ()=>{
+        const p = diffParts(start, new Date());
+        const prefix = disp.getAttribute('data-prefix') || '';
+        disp.textContent = prefix + formatDiff(p, 'dd hh:mm:ss');
+      };
+      tick();
+      interval = setInterval(tick, 1000);
+    }
+
+    async function sync(){
+      if(!cfg.REMOTE_URL){ disp.textContent = 'Set REMOTE_URL (or data-remote on #timerRoot)'; return; }
+      const data = await fetchShared(cfg.REMOTE_URL);
+      timerStart = (data && data.timerStart) || '';
+      if(input) input.value = toInputLocal(timerStart);
+      render(); setEditorVisibility();
+    }
+
+    if(btnSave){
+      btnSave.addEventListener('click', async ()=>{
+        const modeLabel = document.getElementById('modeLabel');
+        if(!(modeLabel && modeLabel.textContent==='Keyholder')) return alert('Keyholder mode required');
+        const v = (input.value||'').replace('T',' ').slice(0,16);
+        await postPatch(cfg.REMOTE_URL, cfg.TOKEN_KEY, { timerStart: v });
+        timerStart = v; render();
+      });
+    }
+    if(btnClear){
+      btnClear.addEventListener('click', async ()=>{
+        const modeLabel = document.getElementById('modeLabel');
+        if(!(modeLabel && modeLabel.textContent==='Keyholder')) return alert('Keyholder mode required');
+        await postPatch(cfg.REMOTE_URL, cfg.TOKEN_KEY, { timerStart: '' });
+        timerStart = ''; render();
+      });
+    }
+
+    // initial sync + keep in step if your page already re-syncs globally
+    sync().catch(e=>{ disp.textContent = String(e.message||e); });
+    document.addEventListener('click', (e)=>{
+      if(e.target && (e.target.id==='toggleMode' || e.target.id==='subModeBtn')){
+        setTimeout(setEditorVisibility, 50);
+      }
+    });
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
 </script>
+<script src="timer_module.js"></script>
+
+<!-- Optional: add this style once to make numbers align nicely -->
+<style>.time-since{font-variant-numeric:tabular-nums;font-weight:600}</style>
 </body>
 </html>
-
