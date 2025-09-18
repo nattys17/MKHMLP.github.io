@@ -105,7 +105,7 @@
   <header>
     <div class="row center">
       <div class="pill">Mode: <span id="modeLabel" class="status">Locked Pet</span></div>
-      <button id="toggleMode" title="Enter a passphrase to enable Keyholder updates">Keyholder Mode</button>
+      <button id="toggleMode" title="Enter password to enable Keyholder edits">Keyholder Mode</button>
       <button id="subModeBtn" >Locked Pet Mode</button>
     </div>
     <h1>Locked Pet's Dashboard</h1>
@@ -255,7 +255,7 @@
   function toInputLocal(ymdHM){ if(!ymdHM) return ""; const s=String(ymdHM).replace("T"," ").replace(" ","T"); return s.slice(0,16); }
 
   // State & role
-  let role = "viewer"; // viewer | keyholder | sub
+  let role = "sub"; // viewer | keyholder | sub
   let state = { progress:0, status:"Locked", nextReview:"", tasks:{}, rules:[], notes:"", calendar:{}, activity:[], timerStart:"" };
 
   // UI elements
