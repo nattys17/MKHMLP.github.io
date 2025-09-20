@@ -99,6 +99,19 @@
   .small{font-size:.9rem}
   .right{margin-left:auto}
   .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,monospace;font-size:.85rem;background:#0e0e12;border:1px solid #2a2a33;padding:2px 6px;border-radius:6px}
+
+  table.wk{width:100%;border-collapse:separate;border-spacing:0 8px}
+  table.wk thead th{font-size:.9rem;color:#a5a7b5;text-align:left;padding:6px 8px}
+  table.wk td, table.wk th{vertical-align:middle}
+  table.wk tbody tr{background:#11131a;border:1px solid #2a2a33}
+  table.wk tbody td{padding:10px 8px}
+  table.wk .taskcol{width:40%}
+  .wk .todaycol{outline:1px dashed #3b82f6; outline-offset:-4px; border-radius:6px}
+  .wk .taskname{display:flex;align-items:center;gap:8px;font-weight:600}
+  .wk input[type=checkbox]{transform:scale(1.2)}
+  .banner{display:block;padding:8px 12px;border:1px solid #2a2a33;border-radius:10px;background:#12131a;margin:8px 0}
+  .banner.success{border-color:#2563eb}
+  .banner.error{border-color:#ef4444}
 </style>
 </head>
 <body>
@@ -161,7 +174,7 @@
 
     <!-- TIMER CARD -->
 <section class="card" id="timerRoot" 
-         data-remote="https://script.google.com/macros/s/AKfycbwBeemB2LOxd4171xgm0ZS1aZcMu4W17qRHik2EuD8oYWJnZcW6zKdQRwVcG1VsdmFh/exec" 
+         data-remote="https://script.google.com/macros/s/AKfycbygR2crQWUp-YeKrPZs-N4XJWK1qk0ZDRvr_65hxFCEDy1UEV1I7IAO9GGnil-mexGd/exec" 
          data-token-key="080692"
          data-token-sub="123091">
   <h2>Locked Timer</h2>
@@ -174,17 +187,30 @@
     <button id="timerClear">Clear</button>
   </div>
 </section>
+    
+     <section class="card" id="weeklyRoot"
+  <h2>📅 Weekly Tasks (Mon–Fri)</h2>
+  <div id="weeklyMsg" class="banner" style="display:none"></div>
+  <div id="weekRangePDT" class="muted">—</div>
+  <div id="weeklyTableWrap">
+    <table class="wk" id="weeklyTable">
+      <thead><tr>
+        <th class="taskcol">Task</th>
+        <th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th>
+      </tr></thead>
+      <tbody id="weeklyTbody"></tbody>
+    </table>
+  </div>
+</section>
 
-    <section class="card">
-      <h2>Weekly Tasks</h2>
-      <div class="tasks" id="taskList">
-        <label class="task"><input type="checkbox" data-task="mon_dog"> Monday — Healthy meal</label>
-        <label class="task"><input type="checkbox" data-task="tue_meal"> Tuesday — Walk Penny/Exercise</label>
-        <label class="task"><input type="checkbox" data-task="wed_worship"> Wednesday — Walk Penny/Exercise</label>
-        <label class="task"><input type="checkbox" data-task="thu_meal"> Thursday — Healthy meal</label>
-        <label class="task"><input type="checkbox" data-task="fri_voice"> Friday — Walk Penny/Exercise</label>
-      </div>
-    </section>
+<section class="card" id="weeklyConfig" style="display:none">
+  <h2>🛠️ Weekly Tasks Setup (Keyholder)</h2>
+  <div id="weeklyEditList"></div>
+  <div class="row" style="margin-top:10px;gap:8px">
+    <button id="addWeeklyTask">Add Task</button>
+    <button id="saveWeeklyCfg">Save Weekly Tasks</button>
+  </div>
+</section>
 
     <section class="card">
       <h2>Rules (Always in Effect)</h2>
@@ -215,7 +241,7 @@
 <script>
 (function(){
   // ===== CONFIG: set these =====
-  const REMOTE_URL    = "https://script.google.com/macros/s/AKfycbxnWSuWAO3S5Jt4ysHG8c2Dc4bMV2k3tFpoD_KRhG_IeHdUmxGLEjsM8RBD2ZyKNJhh/exec"; // Apps Script Web App URL (/exec)
+  const REMOTE_URL    = "https://script.google.com/macros/s/AKfycbygR2crQWUp-YeKrPZs-N4XJWK1qk0ZDRvr_65hxFCEDy1UEV1I7IAO9GGnil-mexGd/exec"; // Apps Script Web App URL (/exec)
   const KEYHOLDER_PIN = "IamtheKeyholder";                   // UI gate only
   const SUB_PIN       = "";                         // UI gate only
   const TOKEN_KEY     = "080692";                 // must match Apps Script
@@ -543,6 +569,201 @@
   })();
 })();
 
+const TZ = 'America/Los_Angeles';
+
+  function ymdInTZ(){ return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date()); }
+  function dowInTZ(){ return new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday:'short' }).format(new Date()); } // Sun..Sat
+
+  function mondayOfWeekPDT(){
+    const ymd = ymdInTZ(); const [Y,M,D] = ymd.split('-').map(Number);
+    const temp = new Date(Y, M-1, D);
+    const sun0 = (['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(dowInTZ()));
+    const offset = (sun0===0) ? 6 : (sun0-1);
+    const mon = new Date(temp); mon.setDate(temp.getDate() - offset);
+    const yy = mon.getFullYear(), mm = String(mon.getMonth()+1).padStart(2,'0'), dd = String(mon.getDate()).padStart(2,'0');
+    return `${yy}-${mm}-${dd}`;
+  }
+  function weekRangeLabelPDT(){
+    const monStr = mondayOfWeekPDT();
+    const [y,m,d] = monStr.split('-').map(Number);
+    const mon = new Date(y, m-1, d);
+    const fri = new Date(y, m-1, d+4);
+    const fmt = (dt)=>dt.toLocaleDateString(undefined,{month:'short', day:'numeric'});
+    return `${fmt(mon)} – ${fmt(fri)} (PDT)`;
+  }
+  function todayColIndex(){ const idxMap = {Mon:0, Tue:1, Wed:2, Thu:3, Fri:4}; const k = dowInTZ(); return (k in idxMap) ? idxMap[k] : -1; }
+
+  function getCfg(){
+    const root = document.getElementById('weeklyRoot');
+    return {
+      REMOTE_URL: (window.REMOTE_URL || (root && root.dataset.remote) || '').trim(),
+      TOKEN_KEY: (window.TOKEN_KEY || (root && root.dataset.tokenKey) || '').trim(),
+      TOKEN_SUB: (window.TOKEN_SUB || (root && root.dataset.tokenSub) || '').trim()
+    };
+  }
+
+  async function fetchShared(url){
+    const res = await fetch(url + '?v=' + Date.now(), {cache:'no-store'});
+    if(!res.ok) throw new Error('GET failed: HTTP '+res.status);
+    return res.json();
+  }
+  async function postPatch(url, token, who, patch){
+    const body = new URLSearchParams();
+    body.set('token', token);
+    body.set('who', who);
+    body.set('patch', JSON.stringify(patch));
+    const res = await fetch(url, {method:'POST', body});
+    let data=null; try{ data = await res.json(); }catch{}
+    if(!res.ok || !data || data.ok!==true){
+      const msg = data && data.error ? data.error : ('Save failed (HTTP '+res.status+')');
+      throw new Error(msg);
+    }
+  }
+
+  function flash(text, kind){
+    const box = document.getElementById('weeklyMsg');
+    if(!box) return;
+    box.textContent = text || '';
+    box.className = 'banner' + (kind==='error' ? ' error' : kind==='success' ? ' success' : '');
+    box.style.display = text ? 'block' : 'none';
+    clearTimeout(flash._t); flash._t = setTimeout(()=>{ box.style.display='none'; }, 2500);
+  }
+
+  function renderWeeklyTable(state){
+    const weeklyTable = document.getElementById('weeklyTable');
+    const weeklyTbody = document.getElementById('weeklyTbody');
+    const weekRangePDT = document.getElementById('weekRangePDT');
+    if(!weeklyTbody) return;
+
+    const tcol = todayColIndex();
+    if(weeklyTable){
+      const ths = weeklyTable.querySelectorAll('thead th');
+      ths.forEach((th,i)=> th.classList.toggle('todaycol', (i-1)===tcol));
+    }
+    if(weekRangePDT) weekRangePDT.textContent = weekRangeLabelPDT();
+
+    const weekKey = mondayOfWeekPDT();
+    const cfg = state.weeklyTasksConfig || [];
+    const done = (state.weeklyDone && state.weeklyDone[weekKey]) ? state.weeklyDone[weekKey] : {};
+    weeklyTbody.innerHTML = "";
+
+    cfg.forEach(task=>{
+      const tr = document.createElement('tr');
+      const tdName = document.createElement('td'); tdName.className = 'taskcol';
+      tdName.innerHTML = `<div class="taskname">${task.label || '(unnamed task)'}</div>`;
+      tr.appendChild(tdName);
+      for(let i=0;i<5;i++){
+        const td = document.createElement('td');
+        const cb = document.createElement('input'); cb.type='checkbox'; cb.dataset.task = task.id; cb.dataset.col = String(i);
+        const row = done[task.id] || [false,false,false,false,false];
+        cb.checked = !!row[i];
+        td.appendChild(cb); tr.appendChild(td);
+      }
+      weeklyTbody.appendChild(tr);
+    });
+  }
+
+  function renderWeeklyEditor(state){
+    const weeklyEditList = document.getElementById('weeklyEditList');
+    const weeklyConfig = document.getElementById('weeklyConfig');
+    const role = (document.getElementById('modeLabel')||{}).textContent || 'Viewer';
+    if(weeklyConfig) weeklyConfig.style.display = (role==='Keyholder') ? 'block' : 'none';
+    if(!weeklyEditList) return;
+    const cfg = state.weeklyTasksConfig || [];
+    weeklyEditList.innerHTML = "";
+    cfg.forEach((task, idx)=>{
+      const wrap = document.createElement('div'); wrap.style = 'display:flex;gap:8px;align-items:center;margin:6px 0';
+      const input = document.createElement('input'); input.type='text'; input.value = task.label || ''; input.placeholder='Task name';
+      input.style = 'flex:1';
+      const del = document.createElement('button'); del.textContent = 'Delete';
+      del.addEventListener('click', ()=>{ cfg.splice(idx,1); state.weeklyTasksConfig = cfg; renderWeeklyEditor(state); renderWeeklyTable(state); });
+      input.addEventListener('input', ()=>{ task.label = input.value; });
+      wrap.appendChild(input); wrap.appendChild(del);
+      weeklyEditList.appendChild(wrap);
+    });
+  }
+
+  async function init(){
+    const root = document.getElementById('weeklyRoot');
+    if(!root) return;
+    const cfg = getCfg();
+    if(!cfg.REMOTE_URL) return;
+    let state = await fetchShared(cfg.REMOTE_URL);
+    state.weeklyTasksConfig = state.weeklyTasksConfig || [];
+    state.weeklyDone = state.weeklyDone || {};
+
+    renderWeeklyTable(state);
+    renderWeeklyEditor(state);
+
+    const weeklyTbody = document.getElementById('weeklyTbody');
+    if(weeklyTbody){
+      weeklyTbody.addEventListener('change', async (e)=>{
+        if(!e.target.matches('input[type="checkbox"]')) return;
+        const who = ((document.getElementById('modeLabel')||{}).textContent==='Locked Pet') ? 'sub' : 'keyholder';
+        const token = who==='sub' ? cfg.TOKEN_SUB : cfg.TOKEN_KEY;
+        const weekKey = mondayOfWeekPDT();
+        const done = (state.weeklyDone && state.weeklyDone[weekKey]) ? JSON.parse(JSON.stringify(state.weeklyDone[weekKey])) : {};
+        const taskId = e.target.dataset.task; const col = parseInt(e.target.dataset.col,10);
+        const row = done[taskId] || [false,false,false,false,false]; row[col] = e.target.checked; done[taskId] = row;
+        try{
+          await postPatch(cfg.REMOTE_URL, token, who, { weeklyDone: { [weekKey]: done } });
+          state.weeklyDone[weekKey] = done;
+
+          // If all tasks have today's column checked, mark today's calendar day as 'done'
+          const idx = todayColIndex();
+          if(idx>=0){
+            const allToday = (state.weeklyTasksConfig||[]).length>0 && state.weeklyTasksConfig.every(t => (done[t.id]||[])[idx]===true);
+            if(allToday){
+              const ymd = ymdInTZ(); const [yy,mm,dd] = ymd.split('-').map(Number);
+              const ym = yy + '-' + String(mm).padStart(2,'0'); const day = dd;
+              await postPatch(cfg.REMOTE_URL, token, who, { calendarSet: { ym, day, tags: ['done'] } });
+            }
+          }
+          flash('Saved','success');
+        }catch(err){ flash(String(err),'error'); }
+      });
+    }
+
+    const addWeeklyTask = document.getElementById('addWeeklyTask');
+    const saveWeeklyCfg = document.getElementById('saveWeeklyCfg');
+    if(addWeeklyTask){
+      addWeeklyTask.addEventListener('click', ()=>{
+        const role = (document.getElementById('modeLabel')||{}).textContent || 'Viewer';
+        if(role!=='Keyholder') return flash('Keyholder mode required','error');
+        const id = 't' + Math.random().toString(36).slice(2,8);
+        state.weeklyTasksConfig.push({id, label:'New Task'});
+        renderWeeklyEditor(state); renderWeeklyTable(state);
+      });
+    }
+    if(saveWeeklyCfg){
+      saveWeeklyCfg.addEventListener('click', async ()=>{
+        const role = (document.getElementById('modeLabel')||{}).textContent || 'Viewer';
+        if(role!=='Keyholder') return flash('Keyholder mode required','error');
+        const token = cfg.TOKEN_KEY;
+        const clean = (state.weeklyTasksConfig||[]).map(t=>({id:t.id, label:(t.label||'').trim()})).filter(t=>t.label);
+        try{
+          await postPatch(cfg.REMOTE_URL, token, 'keyholder', { weeklyTasksConfig: clean });
+          state.weeklyTasksConfig = clean;
+          renderWeeklyTable(state); renderWeeklyEditor(state);
+          flash('Weekly tasks saved','success');
+        }catch(err){ flash(String(err),'error'); }
+      });
+    }
+
+    // PDT midnight rollover: update header highlight and keep same week unless Monday
+    (function watchPdtRollover(){
+      let last = ymdInTZ();
+      setInterval(()=>{
+        const cur = ymdInTZ();
+        if(cur!==last){ last=cur; renderWeeklyTable(state); }
+      }, 30000);
+    })();
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+  
 (function(){
   // Timer module (no flicker): single aligned ticker + text-diff updates
   function parseLocalDateTime(s){
@@ -680,6 +901,7 @@
 })();
 </script>
 <script src="timer_module.js"></script>
+<script src="weekly_tasks_module.js"></script>
 
 <style>.time-since{font-variant-numeric:tabular-nums;font-weight:600}</style>
 </body>
