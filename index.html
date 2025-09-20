@@ -572,7 +572,8 @@
   })();
 })();
 
-const TZ = 'America/Los_Angeles';
+(function(){
+  const TZ = 'America/Los_Angeles';
 
   function ymdInTZ(){ return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date()); }
   function dowInTZ(){ return new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday:'short' }).format(new Date()); } // Sun..Sat
