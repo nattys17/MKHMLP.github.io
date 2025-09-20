@@ -190,12 +190,13 @@
   </div>
 </section>
     
-     <section class="card" id="weeklyRoot"
+<section class="card" id="weeklyRoot"
          data-remote="https://script.google.com/macros/s/AKfycbygR2crQWUp-YeKrPZs-N4XJWK1qk0ZDRvr_65hxFCEDy1UEV1I7IAO9GGnil-mexGd/exec" 
          data-token-key="080692"
-         data-token-sub="123091"
-         data-role="keyholder">
+         data-token-sub="123091">
   <h2>📅 Weekly Tasks (Mon–Fri)</h2>
+    <button id="toggleWeeklyEditor" class="muted" title="Edit weekly tasks" style="display:none">✏️ Edit</button>
+  </div>
   <div id="weeklyMsg" class="banner" style="display:none"></div>
   <div id="weekRangePDT" class="muted">—</div>
   <div id="weeklyTableWrap">
@@ -207,14 +208,15 @@
       <tbody id="weeklyTbody"></tbody>
     </table>
   </div>
-</section>
 
-<section class="card" id="weeklyConfig" style="display:none">
-  <h2>🛠️ Weekly Tasks Setup (Keyholder)</h2>
-  <div id="weeklyEditList"></div>
-  <div class="row" style="margin-top:10px;gap:8px">
-    <button id="addWeeklyTask">Add Task</button>
-    <button id="saveWeeklyCfg">Save Weekly Tasks</button>
+  <!-- Inline editor (hidden) -->
+  <div id="weeklyEditor" style="display:none;margin-top:10px">
+    <h3 style="margin:6px 0">🛠 Weekly Tasks Setup</h3>
+    <div id="weeklyEditList"></div>
+    <div class="row" style="margin-top:10px;gap:8px">
+      <button id="addWeeklyTask">Add Task</button>
+      <button id="saveWeeklyCfg">Save Weekly Tasks</button>
+    </div>
   </div>
 </section>
 
