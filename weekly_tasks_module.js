@@ -224,6 +224,9 @@
 
   async function init(){
     const root = document.getElementById('weeklyRoot');
+    const btnAdd = document.getElementById('addWeeklyTask');
+    const btnSave = document.getElementById('saveWeeklyCfg');
+    
     if(!root) return;
     const cfg = getCfg(root);
     console.log('[weekly] role:', getRole(root), 'remote:', !!cfg.REMOTE_URL, 'forceUI:', canShowEditorUI(root));
