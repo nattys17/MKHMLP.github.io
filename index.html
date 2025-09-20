@@ -593,7 +593,7 @@
     const mon = new Date(y, m-1, d);
     const fri = new Date(y, m-1, d+4);
     const fmt = (dt)=>dt.toLocaleDateString(undefined,{month:'short', day:'numeric'});
-    return `${fmt(mon)} – ${fmt(fri)};
+    return `${fmt(mon)} – ${fmt(fri)}`;
   }
   function todayColIndex(){ const idxMap = {Mon:0, Tue:1, Wed:2, Thu:3, Fri:4}; const k = dowInTZ(); return (k in idxMap) ? idxMap[k] : -1; }
 
