@@ -1,15 +1,24 @@
 (function(){
-  // Weekly Tasks (Mon–Fri, PDT) — table-style, no CSS grid
-  // v2: Robust role detection so the editor shows reliably.
+  // Weekly Tasks (Mon–Fri, PDT) — single-card layout with inline editor
+  // v3: Editor lives inside the same card; visible & actionable only for Keyholder.
   const TZ = 'America/Los_Angeles';
 
-  function ymdInTZ(){ return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date()); }
-  function dowInTZ(){ return new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday:'short' }).format(new Date()); } // Sun..Sat
+  function ymdInTZ(){
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: TZ, year:'numeric', month:'2-digit', day:'2-digit'
+    }).format(new Date());
+  }
+  function dowInTZ(){
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: TZ, weekday:'short'
+    }).format(new Date()); // Sun..Sat
+  }
+
   function mondayOfWeekPDT(){
     const ymd = ymdInTZ(); const [Y,M,D] = ymd.split('-').map(Number);
     const temp = new Date(Y, M-1, D);
     const sun0 = (['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(dowInTZ()));
-    const offset = (sun0===0) ? 6 : (sun0-1);
+    const offset = (sun0===0) ? 6 : (sun0-1); // days since Monday
     const mon = new Date(temp); mon.setDate(temp.getDate() - offset);
     const yy = mon.getFullYear(), mm = String(mon.getMonth()+1).padStart(2,'0'), dd = String(mon.getDate()).padStart(2,'0');
     return `${yy}-${mm}-${dd}`;
@@ -22,20 +31,22 @@
     const fmt = (dt)=>dt.toLocaleDateString(undefined,{month:'short', day:'numeric'});
     return `${fmt(mon)} – ${fmt(fri)} (PDT)`;
   }
-  function todayColIndex(){ const idxMap = {Mon:0, Tue:1, Wed:2, Thu:3, Fri:4}; const k = dowInTZ(); return (k in idxMap) ? idxMap[k] : -1; }
+  function todayColIndex(){
+    const idxMap = {Mon:0, Tue:1, Wed:2, Thu:3, Fri:4};
+    const k = dowInTZ(); return (k in idxMap) ? idxMap[k] : -1;
+  }
 
   function getCfg(){
     const root = document.getElementById('weeklyRoot');
     return {
       REMOTE_URL: (window.REMOTE_URL || (root && root.dataset.remote) || '').trim(),
-      TOKEN_KEY: (window.TOKEN_KEY || (root && root.dataset.tokenKey) || '').trim(),
-      TOKEN_SUB: (window.TOKEN_SUB || (root && root.dataset.tokenSub) || '').trim(),
-      ROLE_HINT: (root && root.dataset.role) ? String(root.dataset.role).toLowerCase() : ''
+      TOKEN_KEY:  (window.TOKEN_KEY  || (root && root.dataset.tokenKey) || '').trim(),
+      TOKEN_SUB:  (window.TOKEN_SUB  || (root && root.dataset.tokenSub) || '').trim(),
+      ROLE_HINT:  (root && root.dataset.role) ? String(root.dataset.role).toLowerCase() : ''
     };
   }
-
   function getRole(){
-    // 1) #modeLabel from broader page
+    // 1) From a #modeLabel element on the page
     const ml = (document.getElementById('modeLabel')||{}).textContent || '';
     if(ml) {
       const low = ml.trim().toLowerCase();
@@ -49,7 +60,7 @@
       if(cfg.ROLE_HINT==='sub' || cfg.ROLE_HINT==='pet') return 'sub';
       if(cfg.ROLE_HINT==='viewer' || cfg.ROLE_HINT==='view') return 'viewer';
     }
-    // 3) URL param ?role=keyholder
+    // 3) ?role=keyholder in URL
     const qp = new URLSearchParams(location.search).get('role');
     if(qp){
       const v = qp.toLowerCase();
@@ -57,7 +68,7 @@
       if(v==='sub' || v==='pet') return 'sub';
       return 'viewer';
     }
-    // 4) global override
+    // 4) window.UI_ROLE override
     if(window.UI_ROLE){
       const v = String(window.UI_ROLE).toLowerCase();
       if(v==='keyholder' || v==='kh' || v==='owner') return 'keyholder';
@@ -128,49 +139,74 @@
     });
   }
 
-  function renderWeeklyEditor(state){
-    const weeklyEditList = document.getElementById('weeklyEditList');
-    const weeklyConfig = document.getElementById('weeklyConfig');
-    if(!weeklyConfig) return;
+  function renderInlineEditor(state){
+    const editor  = document.getElementById('weeklyEditor');
+    const list    = document.getElementById('weeklyEditList');
+    const btnToggle = document.getElementById('toggleWeeklyEditor');
+    const btnAdd  = document.getElementById('addWeeklyTask');
+    const btnSave = document.getElementById('saveWeeklyCfg');
     const role = getRole();
-    weeklyConfig.style.display = (role==='keyholder') ? 'block' : 'none';
-    if(!weeklyEditList) return;
+
+    // Show the ✏️ Edit button only for Keyholder
+    if(btnToggle) btnToggle.style.display = (role==='keyholder') ? 'inline-flex' : 'none';
+    // Always hide the editor for non-keyholders (even if they hack the DOM)
+    if(editor){
+      if(role!=='keyholder'){ editor.style.display = 'none'; }
+    }
+
+    if(!list) return;
     const cfg = state.weeklyTasksConfig || [];
-    weeklyEditList.innerHTML = "";
+    list.innerHTML = "";
     cfg.forEach((task, idx)=>{
-      const wrap = document.createElement('div'); wrap.style = 'display:flex;gap:8px;align-items:center;margin:6px 0';
+      const wrap = document.createElement('div'); wrap.className = 'wk-row-edit';
       const input = document.createElement('input'); input.type='text'; input.value = task.label || ''; input.placeholder='Task name';
-      input.style = 'flex:1';
-      const del = document.createElement('button'); del.textContent = 'Delete';
-      del.addEventListener('click', ()=>{ cfg.splice(idx,1); state.weeklyTasksConfig = cfg; renderWeeklyEditor(state); renderWeeklyTable(state); });
-      input.addEventListener('input', ()=>{ task.label = input.value; });
+      input.className = 'wk-input';
+      const del = document.createElement('button'); del.textContent = 'Delete'; del.className = 'wk-del';
+      if(role!=='keyholder'){ input.disabled = true; del.disabled = true; }
+      del.addEventListener('click', ()=>{
+        if(role!=='keyholder') return;
+        cfg.splice(idx,1);
+        state.weeklyTasksConfig = cfg;
+        renderInlineEditor(state); renderWeeklyTable(state);
+      });
+      input.addEventListener('input', ()=>{
+        if(role!=='keyholder') return;
+        task.label = input.value;
+      });
       wrap.appendChild(input); wrap.appendChild(del);
-      weeklyEditList.appendChild(wrap);
+      list.appendChild(wrap);
     });
+
+    if(btnAdd)  btnAdd.disabled  = (role!=='keyholder');
+    if(btnSave) btnSave.disabled = (role!=='keyholder');
   }
 
   async function init(){
     const root = document.getElementById('weeklyRoot');
     if(!root) return;
     const cfg = getCfg();
-    if(!cfg.REMOTE_URL){
-      // Still show the editor (Keyholder) even without backend so layout can be tested
-      renderWeeklyEditor({ weeklyTasksConfig: [] });
-      console.warn('[weekly] REMOTE_URL not set; editor visibility driven by role only.');
-      return;
+    let state = { weeklyTasksConfig: [], weeklyDone: {} };
+
+    try{
+      if(cfg.REMOTE_URL){
+        state = await fetchShared(cfg.REMOTE_URL);
+        state.weeklyTasksConfig = state.weeklyTasksConfig || [];
+        state.weeklyDone = state.weeklyDone || {};
+      }
+    }catch(e){
+      flash(String(e),'error');
     }
-    let state = await fetchShared(cfg.REMOTE_URL);
-    state.weeklyTasksConfig = state.weeklyTasksConfig || [];
-    state.weeklyDone = state.weeklyDone || {};
 
     renderWeeklyTable(state);
-    renderWeeklyEditor(state);
+    renderInlineEditor(state);
 
+    // Checkbox events
     const weeklyTbody = document.getElementById('weeklyTbody');
     if(weeklyTbody){
       weeklyTbody.addEventListener('change', async (e)=>{
         if(!e.target.matches('input[type="checkbox"]')) return;
         const role = getRole();
+        if(!(role==='keyholder' || role==='sub')){ flash('Choose a role','error'); return; }
         const who = (role==='sub') ? 'sub' : 'keyholder';
         const token = who==='sub' ? cfg.TOKEN_SUB : cfg.TOKEN_KEY;
         const weekKey = mondayOfWeekPDT();
@@ -178,13 +214,15 @@
         const taskId = e.target.dataset.task; const col = parseInt(e.target.dataset.col,10);
         const row = done[taskId] || [false,false,false,false,false]; row[col] = e.target.checked; done[taskId] = row;
         try{
-          await postPatch(cfg.REMOTE_URL, token, who, { weeklyDone: { [weekKey]: done } });
+          if(cfg.REMOTE_URL) await postPatch(cfg.REMOTE_URL, token, who, { weeklyDone: { [weekKey]: done } });
           state.weeklyDone[weekKey] = done;
 
+          // If all tasks are checked for today, mark calendar as 'done'
           const idx = todayColIndex();
           if(idx>=0){
-            const allToday = (state.weeklyTasksConfig||[]).length>0 && state.weeklyTasksConfig.every(t => (done[t.id]||[])[idx]===true);
-            if(allToday){
+            const allToday = (state.weeklyTasksConfig||[]).length>0 &&
+                             state.weeklyTasksConfig.every(t => (done[t.id]||[])[idx]===true);
+            if(allToday && cfg.REMOTE_URL){
               const ymd = ymdInTZ(); const [yy,mm,dd] = ymd.split('-').map(Number);
               const ym = yy + '-' + String(mm).padStart(2,'0'); const day = dd;
               await postPatch(cfg.REMOTE_URL, token, who, { calendarSet: { ym, day, tags: ['done'] } });
@@ -195,32 +233,42 @@
       });
     }
 
-    const addWeeklyTask = document.getElementById('addWeeklyTask');
-    const saveWeeklyCfg = document.getElementById('saveWeeklyCfg');
-    if(addWeeklyTask){
-      addWeeklyTask.addEventListener('click', ()=>{
-        const role = getRole();
-        if(role!=='keyholder') return flash('Keyholder mode required','error');
-        const id = 't' + Math.random().toString(36).slice(2,8);
-        state.weeklyTasksConfig.push({id, label:'New Task'});
-        renderWeeklyEditor(state); renderWeeklyTable(state);
+    // Inline editor buttons
+    const btnToggle = document.getElementById('toggleWeeklyEditor');
+    const btnAdd = document.getElementById('addWeeklyTask');
+    const btnSave = document.getElementById('saveWeeklyCfg');
+
+    if(btnToggle){
+      btnToggle.addEventListener('click', ()=>{
+        const role = getRole(); if(role!=='keyholder') return;
+        const editor = document.getElementById('weeklyEditor');
+        if(editor) editor.style.display = (editor.style.display==='none'||!editor.style.display) ? 'block' : 'none';
       });
     }
-    if(saveWeeklyCfg){
-      saveWeeklyCfg.addEventListener('click', async ()=>{
-        const role = getRole();
-        if(role!=='keyholder') return flash('Keyholder mode required','error');
-        const token = cfg.TOKEN_KEY;
+    if(btnAdd){
+      btnAdd.addEventListener('click', ()=>{
+        const role = getRole(); if(role!=='keyholder') return flash('Keyholder mode required','error');
+        const cfgList = state.weeklyTasksConfig || [];
+        const id = 't' + Math.random().toString(36).slice(2,8);
+        cfgList.push({id, label:'New Task'});
+        state.weeklyTasksConfig = cfgList;
+        renderInlineEditor(state); renderWeeklyTable(state);
+      });
+    }
+    if(btnSave){
+      btnSave.addEventListener('click', async ()=>{
+        const role = getRole(); if(role!=='keyholder') return flash('Keyholder mode required','error');
         const clean = (state.weeklyTasksConfig||[]).map(t=>({id:t.id, label:(t.label||'').trim()})).filter(t=>t.label);
         try{
-          await postPatch(cfg.REMOTE_URL, token, 'keyholder', { weeklyTasksConfig: clean });
+          if(cfg.REMOTE_URL) await postPatch(cfg.REMOTE_URL, cfg.TOKEN_KEY, 'keyholder', { weeklyTasksConfig: clean });
           state.weeklyTasksConfig = clean;
-          renderWeeklyTable(state); renderWeeklyEditor(state);
+          renderWeeklyTable(state); renderInlineEditor(state);
           flash('Weekly tasks saved','success');
         }catch(err){ flash(String(err),'error'); }
       });
     }
 
+    // PDT rollover watcher
     (function watchPdtRollover(){
       let last = ymdInTZ();
       setInterval(()=>{
