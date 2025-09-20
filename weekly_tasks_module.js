@@ -275,6 +275,42 @@
       });
     }
 
+    if (btnAdd && !btnAdd._bound) {
+  btnAdd._bound = true;
+  btnAdd.addEventListener('click', () => {
+    const role = getRole(root);
+    if (role !== 'keyholder') return flash('Keyholder mode required','error');
+    const id = 't' + Math.random().toString(36).slice(2,8);
+    (state.weeklyTasksConfig ||= []).push({ id, label: 'New Task' });
+    renderInlineEditor(root, state);
+    renderWeeklyTable(state);
+  });
+}
+
+if (btnSave && !btnSave._bound) {
+  btnSave._bound = true;
+  btnSave.addEventListener('click', async () => {
+    const role = getRole(root);
+    if (role !== 'keyholder') return flash('Keyholder mode required','error');
+    const cfg = getCfg(root);
+    const clean = (state.weeklyTasksConfig||[])
+      .map(t => ({ id: t.id, label: (t.label||'').trim() }))
+      .filter(t => t.label);
+
+    try {
+      if (cfg.REMOTE_URL) {
+        await postPatch(cfg.REMOTE_URL, cfg.TOKEN_KEY, 'keyholder', { weeklyTasksConfig: clean });
+      }
+      state.weeklyTasksConfig = clean;
+      renderWeeklyTable(state);
+      renderInlineEditor(root, state);
+      flash('Weekly tasks saved','success');
+    } catch (err) {
+      flash(String(err),'error');
+    }
+  });
+}
+
     // PDT rollover watcher
     (function watchPdtRollover(){
       let last = ymdInTZ();
